@@ -1,0 +1,340 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MUX_VERSION="0.1.0"
+
+# Default config
+MUX_CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/mux/config"
+
+MUX_REPOS_DIR="${HOME}/repos"
+MUX_DOTFILES_DIR="${HOME}/.dotfiles"
+
+MUX_EDITOR_CMD='exec nvim .'
+MUX_SHELL_CMD='exec "$SHELL" -l'
+MUX_CHOOSER_CMD='fzf --prompt="Project > "'
+
+# Optional defaults if config does not override them
+MUX_FIXED_PROJECTS_DEFAULT=("${MUX_DOTFILES_DIR}")
+MUX_PROJECT_ROOTS_DEFAULT=("${MUX_REPOS_DIR}")
+
+load_config() {
+    if [[ -f "${MUX_CONFIG_FILE}" ]]; then
+        # shellcheck source=/dev/null
+        source "${MUX_CONFIG_FILE}"
+    fi
+
+    if ! declare -p MUX_FIXED_PROJECTS >/dev/null 2>&1; then
+        MUX_FIXED_PROJECTS=("${MUX_FIXED_PROJECTS_DEFAULT[@]}")
+    fi
+
+    if ! declare -p MUX_PROJECT_ROOTS >/dev/null 2>&1; then
+        MUX_PROJECT_ROOTS=("${MUX_PROJECT_ROOTS_DEFAULT[@]}")
+    fi
+}
+
+usage() {
+    cat <<'EOF'
+mux - tmux project/session launcher
+
+Usage:
+  mux
+  mux /path/to/project
+  mux --help
+  mux --version
+
+Behavior:
+  - opens a tmux session for a repo/project root
+  - opens an editor window at repo root
+  - opens a shell window at repo root
+  - optionally runs .mux/launch.sh
+  - optionally opens extra windows from .mux/subprojects
+  - auto-detects Python venvs (.venv, venv, env)
+  - auto-detects Node versions via .nvmrc
+
+Config:
+  ~/.config/mux/config
+
+Repo-side optional files:
+  .mux/launch.sh
+  .mux/subprojects
+EOF
+}
+
+require_cmd() {
+    local cmd="$1"
+    command -v "${cmd}" >/dev/null 2>&1 || {
+        echo "Error: required command not found: ${cmd}" >&2
+        exit 1
+    }
+}
+
+resolve_dir() {
+    local p="$1"
+
+    if [[ -d "${p}" ]]; then
+        cd "${p}" >/dev/null 2>&1 && pwd -P
+        return 0
+    fi
+
+    if [[ -L "${p}" ]]; then
+        local resolved
+        resolved="$(readlink -f "${p}" 2>/dev/null || true)"
+        if [[ -n "${resolved}" && -d "${resolved}" ]]; then
+            cd "${resolved}" >/dev/null 2>&1 && pwd -P
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+emit_project_if_valid() {
+    local p="$1"
+    local resolved
+
+    resolved="$(resolve_dir "${p}" || true)"
+    [[ -n "${resolved}" ]] && echo "${resolved}"
+}
+
+build_choices() {
+    local p=""
+    local root=""
+    local child=""
+
+    for p in "${MUX_FIXED_PROJECTS[@]}"; do
+        emit_project_if_valid "${p}"
+    done
+
+    for root in "${MUX_PROJECT_ROOTS[@]}"; do
+        [[ -d "${root}" ]] || continue
+        while IFS= read -r child; do
+            emit_project_if_valid "${child}"
+        done < <(find "${root}" -mindepth 1 -maxdepth 1 \( -type d -o -type l \) -print 2>/dev/null | sort)
+    done
+}
+
+choose_project() {
+    build_choices | awk '!seen[$0]++' | eval "${MUX_CHOOSER_CMD}"
+}
+
+find_launch_script() {
+    local root="$1"
+    local f="${root}/.mux/launch.sh"
+    [[ -f "${f}" ]] && echo "${f}" && return 0
+    return 1
+}
+
+find_subprojects_file() {
+    local root="$1"
+    local f="${root}/.mux/subprojects"
+    [[ -f "${f}" ]] && echo "${f}" && return 0
+    return 1
+}
+
+find_python_venv_in_dir() {
+    local dir="$1"
+    local candidate
+
+    for candidate in ".venv" "venv" "env"; do
+        if [[ -f "${dir}/${candidate}/bin/activate" ]]; then
+            echo "${dir}/${candidate}"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+find_nearest_python_venv() {
+    local start="$1"
+    local stop="$2"
+    local current="$start"
+    local found=""
+
+    while true; do
+        found="$(find_python_venv_in_dir "${current}" || true)"
+        if [[ -n "${found}" ]]; then
+            echo "${found}"
+            return 0
+        fi
+
+        [[ "${current}" == "${stop}" ]] && break
+
+        local parent
+        parent="$(dirname "${current}")"
+        [[ "${parent}" == "${current}" ]] && break
+        current="${parent}"
+    done
+
+    return 1
+}
+
+find_nvmrc_in_dir() {
+    local dir="$1"
+    [[ -f "${dir}/.nvmrc" ]] && echo "${dir}/.nvmrc" && return 0
+    return 1
+}
+
+find_nearest_nvmrc() {
+    local start="$1"
+    local stop="$2"
+    local current="$start"
+    local found=""
+
+    while true; do
+        found="$(find_nvmrc_in_dir "${current}" || true)"
+        if [[ -n "${found}" ]]; then
+            echo "${found}"
+            return 0
+        fi
+
+        [[ "${current}" == "${stop}" ]] && break
+
+        local parent
+        parent="$(dirname "${current}")"
+        [[ "${parent}" == "${current}" ]] && break
+        current="${parent}"
+    done
+
+    return 1
+}
+
+sanitize_name() {
+    local name="$1"
+    name="$(printf '%s' "${name}" | tr '. /' '___' | tr -cd '[:alnum:]_-' )"
+    [[ -n "${name}" ]] || name="session"
+    echo "${name}"
+}
+
+build_shell_prefix() {
+    local python_venv="$1"
+    local nvmrc="$2"
+
+    local prefix='cd "$1"'
+
+    if [[ -n "${python_venv}" ]]; then
+        prefix+='; if [[ -f "$2/bin/activate" ]]; then source "$2/bin/activate"; else echo "Warning: Python venv not found: $2" >&2; fi'
+    fi
+
+    if [[ -n "${nvmrc}" ]]; then
+        prefix+='; export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"'
+        prefix+='; if [[ -s "$NVM_DIR/nvm.sh" ]]; then source "$NVM_DIR/nvm.sh"; nvm use >/dev/null || nvm install >/dev/null; else echo "Warning: nvm not found but .nvmrc exists in project chain" >&2; fi'
+    fi
+
+    printf '%s' "${prefix}"
+}
+
+create_window_for_dir() {
+    local session_name="$1"
+    local window_name="$2"
+    local target_dir="$3"
+    local project_root="$4"
+    local command="$5"
+
+    local python_venv
+    python_venv="$(find_nearest_python_venv "${target_dir}" "${project_root}" || true)"
+
+    local nvmrc
+    nvmrc="$(find_nearest_nvmrc "${target_dir}" "${project_root}" || true)"
+
+    local shell_prefix
+    shell_prefix="$(build_shell_prefix "${python_venv}" "${nvmrc}")"
+
+    tmux new-window -t "${session_name}:" -n "${window_name}" -c "${target_dir}" \
+        bash -lc "${shell_prefix}; ${command}" bash "${target_dir}" "${python_venv:-}"
+}
+
+main() {
+    load_config
+
+    case "${1:-}" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -v|--version)
+            echo "${MUX_VERSION}"
+            exit 0
+            ;;
+    esac
+
+    require_cmd tmux
+    require_cmd bash
+
+    local selected=""
+    if [[ $# -eq 1 ]]; then
+        selected="$1"
+    else
+        require_cmd fzf
+        selected="$(choose_project || true)"
+    fi
+
+    [[ -n "${selected}" ]] || exit 0
+
+    local project_root
+    project_root="$(resolve_dir "${selected}")" || {
+        echo "Error: not a directory (or symlink to directory): ${selected}" >&2
+        exit 1
+    }
+
+    local session_name
+    session_name="$(sanitize_name "$(basename "${project_root}")")"
+
+    local launch_script
+    launch_script="$(find_launch_script "${project_root}" || true)"
+
+    local subprojects_file
+    subprojects_file="$(find_subprojects_file "${project_root}" || true)"
+
+    if ! tmux has-session -t "${session_name}" 2>/dev/null; then
+        local root_python_venv
+        root_python_venv="$(find_nearest_python_venv "${project_root}" "${project_root}" || true)"
+
+        local root_nvmrc
+        root_nvmrc="$(find_nearest_nvmrc "${project_root}" "${project_root}" || true)"
+
+        local root_shell_prefix
+        root_shell_prefix="$(build_shell_prefix "${root_python_venv}" "${root_nvmrc}")"
+
+        tmux new-session -d -s "${session_name}" -n "editor" -c "${project_root}" \
+            bash -lc "${root_shell_prefix}; ${MUX_EDITOR_CMD}" bash "${project_root}" "${root_python_venv:-}"
+
+        tmux new-window -t "${session_name}:" -n "shell" -c "${project_root}" \
+            bash -lc "${root_shell_prefix}; ${MUX_SHELL_CMD}" bash "${project_root}" "${root_python_venv:-}"
+
+        if [[ -n "${launch_script}" ]]; then
+            tmux new-window -t "${session_name}:" -n "run" -c "${project_root}" \
+                bash -lc "${root_shell_prefix}; if [[ -x ./.mux/launch.sh ]]; then ./.mux/launch.sh; else bash ./.mux/launch.sh; fi; ${MUX_SHELL_CMD}" bash "${project_root}" "${root_python_venv:-}"
+        fi
+
+        if [[ -n "${subprojects_file}" ]]; then
+            local rel=""
+            local sub_dir=""
+            local window_name=""
+
+            while IFS= read -r rel || [[ -n "${rel}" ]]; do
+                rel="${rel#"${rel%%[![:space:]]*}"}"
+                rel="${rel%"${rel##*[![:space:]]}"}"
+
+                [[ -z "${rel}" ]] && continue
+                [[ "${rel}" == \#* ]] && continue
+
+                sub_dir="${project_root}/${rel}"
+                [[ -d "${sub_dir}" ]] || continue
+
+                window_name="$(sanitize_name "${rel}")"
+                create_window_for_dir "${session_name}" "${window_name}" "${sub_dir}" "${project_root}" "${MUX_SHELL_CMD}"
+            done < "${subprojects_file}"
+        fi
+
+        tmux select-window -t "${session_name}:editor" 2>/dev/null || true
+    fi
+
+    if [[ -z "${TMUX:-}" ]]; then
+        exec tmux attach-session -t "${session_name}"
+    else
+        exec tmux switch-client -t "${session_name}"
+    fi
+}
+
+main "$@"
