@@ -96,11 +96,11 @@ choose_project() {
 }
 
 find_launch_script() {
-    [[ -f "$1/.mux/launch.sh" ]] && echo "$1/.mux/launch.sh"
+    [[ -f "$1/.pmux/launch.sh" ]] && echo "$1/.pmux/launch.sh"
 }
 
 find_subprojects_file() {
-    [[ -f "$1/.mux/subprojects" ]] && echo "$1/.mux/subprojects"
+    [[ -f "$1/.pmux/subprojects" ]] && echo "$1/.pmux/subprojects"
 }
 
 find_python_venv_in_dir() {
@@ -235,7 +235,7 @@ main() {
 
         if [[ -n "$launch" ]]; then
             tmux new-window -t "$session:" -n run -c "$root" \
-                bash -lc "$prefix; bash ./.mux/launch.sh; $PMUX_SHELL_CMD"
+                bash -lc "$prefix; bash ./.pmux/launch.sh; $PMUX_SHELL_CMD"
         fi
 
         if [[ -n "$subs" ]]; then
