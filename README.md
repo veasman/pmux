@@ -24,7 +24,6 @@ pmux automatically:
 Required:
 
 - **tmux**
-- **bash**
 
 Required for interactive project picking:
 
