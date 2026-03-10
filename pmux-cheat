@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+require_cmd() {
+    command -v "$1" >/dev/null 2>&1 || {
+        echo "Error: required command not found: $1" >&2
+        exit 1
+    }
+}
+
+require_cmd tmux
+require_cmd fzf
+require_cmd curl
+
+CHEAT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pmux/cheat"
+LANG_FILE="$CHEAT_DIR/languages"
+CMD_FILE="$CHEAT_DIR/commands"
+
+[[ -f "$LANG_FILE" ]] || {
+    echo "Error: missing $LANG_FILE" >&2
+    exit 1
+}
+
+[[ -f "$CMD_FILE" ]] || {
+    echo "Error: missing $CMD_FILE" >&2
+    exit 1
+}
+
+selected="$(cat "$LANG_FILE" "$CMD_FILE" | awk 'NF' | fzf --prompt="cheat> " || true)"
+[[ -n "${selected:-}" ]] || exit 0
+
+read -r -p "Enter Query: " query
+[[ -n "${query:-}" ]] || exit 0
+
+if grep -qsx "$selected" "$LANG_FILE"; then
+    query="$(printf '%s' "$query" | tr ' ' '+')"
+    tmux new-window -n "cheat:$selected" \
+        "bash -lc 'echo \"curl cht.sh/$selected/$query\"; echo; curl -s \"cht.sh/$selected/$query\"; exec bash'"
+else
+    tmux new-window -n "cheat:$selected" \
+        "bash -lc 'curl -s \"cht.sh/$selected~$query\" | less'"
+fi

@@ -219,6 +219,7 @@ create_container_session() {
     local launch="$4"
 
     local first_window=""
+    local first=1
 
     while IFS= read -r rel || [[ -n "$rel" ]]; do
         rel="$(printf '%s' "$rel" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
@@ -228,15 +229,28 @@ create_container_session() {
         local window_name
         window_name="$(sanitize_name "$rel")"
 
-        run_in_window \
-            "$session" \
-            "$window_name" \
-            "$root/$rel" \
-            "$root" \
-            "$PMUX_EDITOR_CMD"
+        if [[ "$first" -eq 1 ]]; then
+            local venv
+            venv="$(find_nearest_python_venv "$root/$rel" "$root" || true)"
 
-        if [[ -z "$first_window" ]]; then
+            local nvmrc
+            nvmrc="$(find_nearest_nvmrc "$root/$rel" "$root" || true)"
+
+            local prefix
+            prefix="$(build_shell_prefix "$venv" "$nvmrc")"
+
+            tmux new-session -d -s "$session" -n "$window_name" -c "$root/$rel" \
+                bash -lc "$prefix; $PMUX_EDITOR_CMD" bash "$root/$rel" "$venv"
+
             first_window="$window_name"
+            first=0
+        else
+            run_in_window \
+                "$session" \
+                "$window_name" \
+                "$root/$rel" \
+                "$root" \
+                "$PMUX_EDITOR_CMD"
         fi
     done < "$subs_file"
 

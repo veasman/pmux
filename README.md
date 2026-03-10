@@ -17,6 +17,11 @@ pmux automatically:
 - activates Python virtual environments
 - activates Node versions via `.nvmrc`
 
+Related tools:
+
+- **pmux-run**: detect and run likely project commands in the current tmux session
+- **pmux-cheat**: open cht.sh lookups in tmux
+
 ---
 
 # Requirements
@@ -32,6 +37,9 @@ Required for interactive project picking:
 Optional:
 
 - **nvm** (for `.nvmrc` support)
+- **jq** (for better `package.json` script detection in `pmux-run`)
+- **curl** (for `pmux-cheat`)
+- **xclip** (for the example tmux clipboard binding on X11)
 
 ---
 
@@ -49,7 +57,11 @@ This installs:
 
 ```text
 ~/.local/bin/pmux
+~/.local/bin/pmux-run
+~/.local/bin/pmux-cheat
 ~/.config/pmux/config
+~/.config/pmux/cheat/languages
+~/.config/pmux/cheat/commands
 ```
 
 Make sure `~/.local/bin` is in your `PATH`.
@@ -178,8 +190,6 @@ set -euo pipefail
 make dev
 ```
 
----
-
 ## `.pmux/subprojects`
 
 Optional file that marks a repo as a **container project**.
@@ -240,6 +250,51 @@ nvm use
 ```
 
 This applies per window, so different subprojects in a container repo can use different environments.
+
+---
+
+# pmux-run
+
+`pmux-run` is a current-project command picker for tmux.
+
+It inspects the current pane directory and suggests likely commands such as:
+
+* `make <target>`
+* `docker compose -f <file> up`
+* `docker compose -f <file> down`
+* `docker build ...`
+* `npm run <script>`
+* `go test ./...`
+* `go run .`
+* `cargo run`
+* `cargo test`
+* `python -m pytest`
+
+It runs the selected command in a `run` window in the current tmux session.
+
+Examples:
+
+```bash
+pmux-run
+pmux-run --multi
+```
+
+`--multi` lets you pick multiple commands and run them in panes in the `run` window.
+
+---
+
+# pmux-cheat
+
+`pmux-cheat` opens quick cht.sh lookups in tmux.
+
+It reads from:
+
+```text
+~/.config/pmux/cheat/languages
+~/.config/pmux/cheat/commands
+```
+
+and opens a new tmux window with the result.
 
 ---
 
@@ -334,7 +389,17 @@ run
 
 ---
 
+# Suggested tmux Bindings
+
+```tmux
+bind-key -r f display-popup -E "~/.local/bin/pmux"
+bind-key -r r run-shell "~/.local/bin/pmux-run"
+bind-key -r R run-shell "~/.local/bin/pmux-run --multi"
+bind-key -r c run-shell "~/.local/bin/pmux-cheat"
+```
+
+---
+
 # License
 
 MIT
-
