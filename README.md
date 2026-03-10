@@ -1,18 +1,38 @@
 # pmux
 
-**pmux** (Project Multiplexer) is a lightweight tool that launches development projects inside **tmux** sessions.
+**pmux** (Project Multiplexer) is a lightweight tool for launching development projects into structured **tmux** sessions.
 
-It automatically:
+It is designed for two kinds of repositories:
 
-- opens a tmux workspace for a project
-- launches your editor
-- opens a shell
+- **leaf projects**: normal projects you work in directly
+- **container projects**: repos that mainly organize and coordinate subprojects
+
+pmux automatically:
+
+- opens a tmux session for a project
+- launches Neovim or your configured editor
+- opens an interactive shell
 - optionally runs project startup scripts
-- opens windows for subprojects
+- supports container repos with subproject editor windows
 - activates Python virtual environments
 - activates Node versions via `.nvmrc`
 
-pmux is designed to make switching between development projects fast and consistent.
+---
+
+# Requirements
+
+Required:
+
+- **tmux**
+- **bash**
+
+Required for interactive project picking:
+
+- **fzf**
+
+Optional:
+
+- **nvm** (for `.nvmrc` support)
 
 ---
 
@@ -24,16 +44,16 @@ Clone the repository and run:
 
 ```bash
 ./install.sh
-```
+````
 
-This will install:
+This installs:
 
-```
+```text
 ~/.local/bin/pmux
 ~/.config/pmux/config
 ```
 
-Ensure `~/.local/bin` is in your PATH.
+Make sure `~/.local/bin` is in your `PATH`.
 
 ---
 
@@ -41,55 +61,194 @@ Ensure `~/.local/bin` is in your PATH.
 
 Launch the project picker:
 
-```
+```bash
 pmux
 ```
 
-Select a project and a tmux workspace opens automatically.
+Or open a project directly:
 
-You can also open a project directly:
-
-```
+```bash
 pmux ~/repos/myproject
 ```
 
----
-
-# Requirements
-
-Required:
-
-- **tmux**
-- **bash**
-
-Required for interactive picker:
-
-- **fzf**
-
-Optional:
-
-- **nvm** (for `.nvmrc` support)
+If a tmux session for that project already exists, pmux attaches to it or switches to it.
 
 ---
 
-# What pmux Does
+# How pmux Works
 
-When opening a project, pmux creates a tmux session with:
+pmux detects project type based on:
 
-| Window | Purpose |
-|------|------|
-| editor | opens your editor in the project root |
-| shell | interactive shell |
-| run | executes `.mux/launch.sh` if present |
-| subprojects | optional windows defined in `.mux/subprojects` |
+```text
+.pmux/subprojects
+```
+
+* If it exists, the repo is treated as a **container project**
+* If it does not exist, the repo is treated as a **leaf project**
+
+---
+
+# Leaf Projects
+
+A leaf project is a normal standalone project.
+
+Example:
+
+```text
+myapp/
+├── .pmux/
+│   └── launch.sh
+├── src/
+└── package.json
+```
+
+pmux creates:
+
+| Window | Purpose                                        |
+| ------ | ---------------------------------------------- |
+| editor | opens the editor in the project root           |
+| shell  | opens an interactive shell in the project root |
+| run    | runs `.pmux/launch.sh`, if present             |
+
+---
+
+# Container Projects
+
+A container project is a repo that contains subprojects.
+
+Example:
+
+```text
+platform/
+├── .pmux/
+│   ├── launch.sh
+│   └── subprojects
+├── frontend/
+├── backend/
+└── worker/
+```
+
+Example `.pmux/subprojects`:
+
+```text
+frontend
+backend
+worker
+```
+
+pmux creates:
+
+| Window   | Purpose                                 |
+| -------- | --------------------------------------- |
+| frontend | editor window for `frontend/`           |
+| backend  | editor window for `backend/`            |
+| worker   | editor window for `worker/`             |
+| shell    | root shell in the container project     |
+| run      | runs root `.pmux/launch.sh`, if present |
+
+Notes:
+
+* container projects do **not** create a root editor window
+* subprojects get editor windows only
+* subprojects do **not** automatically get shell or run windows
+
+---
+
+# Repo Features
+
+pmux supports optional repo-local configuration under:
+
+```text
+.pmux/
+```
+
+## `.pmux/launch.sh`
+
+Optional startup script for the project root.
+
+For leaf projects, this creates the `run` window.
+
+For container projects, this creates a root-level `run` window.
+
+Example:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+make dev
+```
+
+---
+
+## `.pmux/subprojects`
+
+Optional file that marks a repo as a **container project**.
+
+Each non-empty, non-comment line should be a relative subdirectory path.
+
+Example:
+
+```text
+frontend
+backend
+worker
+```
+
+Comments and blank lines are allowed:
+
+```text
+# app surfaces
+frontend
+backend
+
+# jobs
+worker
+```
+
+If `.pmux/subprojects` exists but contains no valid directories, pmux exits with an error.
+
+---
+
+# Environment Detection
+
+Before launching commands in a window, pmux attempts to load local development environments.
+
+## Python
+
+pmux searches upward from the window directory toward the project root for:
+
+```text
+.venv
+venv
+env
+```
+
+If found, it activates the nearest match.
+
+## Node
+
+pmux searches upward from the window directory toward the project root for:
+
+```text
+.nvmrc
+```
+
+If found, and `nvm` is installed, pmux runs:
+
+```bash
+nvm use
+```
+
+This applies per window, so different subprojects in a container repo can use different environments.
 
 ---
 
 # Configuration
 
-User config is stored at:
+User config lives at:
 
-```
+```text
 ~/.config/pmux/config
 ```
 
@@ -98,6 +257,7 @@ Example:
 ```bash
 PMUX_EDITOR_CMD='exec nvim .'
 PMUX_SHELL_CMD='exec "$SHELL" -l'
+PMUX_CHOOSER_CMD='fzf --prompt="Project > "'
 
 PMUX_FIXED_PROJECTS=(
     "$HOME/.dotfiles"
@@ -112,14 +272,14 @@ PMUX_PROJECT_ROOTS=(
 
 # Project Discovery
 
-pmux builds the project list from:
+pmux builds its selectable project list from:
 
-- directories listed in `PMUX_FIXED_PROJECTS`
-- all child directories of `PMUX_PROJECT_ROOTS`
+* directories in `PMUX_FIXED_PROJECTS`
+* first-level child directories of `PMUX_PROJECT_ROOTS`
 
 Example:
 
-```
+```text
 ~/repos/project1
 ~/repos/project2
 ~/repos/project3
@@ -129,89 +289,48 @@ All become selectable projects.
 
 ---
 
-# Repo Features
+# Example Layouts
 
-pmux supports optional repo configuration.
+## Leaf project
 
-## `.mux/launch.sh`
-
-Startup script executed when the project opens.
-
-Example:
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-make dev
+```text
+project/
+├── .pmux/
+│   └── launch.sh
+├── .venv/
+└── src/
 ```
 
----
+Creates:
 
-## `.mux/subprojects`
-
-List directories to open additional shells for.
-
-Example:
-
+```text
+editor
+shell
+run
 ```
+
+## Container project
+
+```text
+project/
+├── .pmux/
+│   ├── launch.sh
+│   └── subprojects
+├── backend/
+│   └── .venv/
+├── frontend/
+│   └── .nvmrc
+└── worker/
+```
+
+Creates:
+
+```text
 backend
 frontend
 worker
-```
-
----
-
-# Environment Detection
-
-pmux automatically activates environments.
-
-### Python
-
-Searches for:
-
-```
-.venv
-venv
-env
-```
-
-Nearest match wins.
-
----
-
-### Node
-
-Searches for:
-
-```
-.nvmrc
-```
-
-If found and `nvm` is installed:
-
-```
-nvm use
-```
-
-runs automatically.
-
----
-
-# Example Project
-
-```
-project/
-├── Makefile
-├── .mux
-│   ├── launch.sh
-│   └── subprojects
-├── backend
-│   └── .venv
-├── frontend
-│   └── .nvmrc
-└── worker
-    └── .venv
+shell
+run
 ```
 
 ---
@@ -219,3 +338,4 @@ project/
 # License
 
 MIT
+

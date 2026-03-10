@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PMUX_VERSION="0.1.0"
+PMUX_VERSION="0.2.0"
 
 PMUX_CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/pmux/config"
 
@@ -164,9 +164,9 @@ build_shell_prefix() {
     printf '%s' "$p"
 }
 
-create_window_for_dir() {
+run_in_window() {
     local session="$1"
-    local name="$2"
+    local window_name="$2"
     local dir="$3"
     local root="$4"
     local cmd="$5"
@@ -180,16 +180,102 @@ create_window_for_dir() {
     local prefix
     prefix="$(build_shell_prefix "$venv" "$nvmrc")"
 
-    tmux new-window -t "$session:" -n "$name" -c "$dir" \
+    tmux new-window -t "$session:" -n "$window_name" -c "$dir" \
         bash -lc "$prefix; $cmd" bash "$dir" "$venv"
+}
+
+create_leaf_session() {
+    local session="$1"
+    local root="$2"
+    local launch="$3"
+
+    local venv
+    venv="$(find_nearest_python_venv "$root" "$root" || true)"
+
+    local nvmrc
+    nvmrc="$(find_nearest_nvmrc "$root" "$root" || true)"
+
+    local prefix
+    prefix="$(build_shell_prefix "$venv" "$nvmrc")"
+
+    tmux new-session -d -s "$session" -n editor -c "$root" \
+        bash -lc "$prefix; $PMUX_EDITOR_CMD" bash "$root" "$venv"
+
+    tmux new-window -t "$session:" -n shell -c "$root" \
+        bash -lc "$prefix; $PMUX_SHELL_CMD" bash "$root" "$venv"
+
+    if [[ -n "$launch" ]]; then
+        tmux new-window -t "$session:" -n run -c "$root" \
+            bash -lc "$prefix; bash ./.pmux/launch.sh; $PMUX_SHELL_CMD"
+    fi
+
+    tmux select-window -t "$session:editor"
+}
+
+create_container_session() {
+    local session="$1"
+    local root="$2"
+    local subs_file="$3"
+    local launch="$4"
+
+    local first_window=""
+
+    while IFS= read -r rel || [[ -n "$rel" ]]; do
+        rel="$(printf '%s' "$rel" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+        [[ -z "$rel" || "$rel" == \#* ]] && continue
+        [[ -d "$root/$rel" ]] || continue
+
+        local window_name
+        window_name="$(sanitize_name "$rel")"
+
+        run_in_window \
+            "$session" \
+            "$window_name" \
+            "$root/$rel" \
+            "$root" \
+            "$PMUX_EDITOR_CMD"
+
+        if [[ -z "$first_window" ]]; then
+            first_window="$window_name"
+        fi
+    done < "$subs_file"
+
+    if [[ -z "$first_window" ]]; then
+        echo "Error: .pmux/subprojects exists, but no valid subproject directories were found." >&2
+        exit 1
+    fi
+
+    run_in_window \
+        "$session" \
+        "shell" \
+        "$root" \
+        "$root" \
+        "$PMUX_SHELL_CMD"
+
+    if [[ -n "$launch" ]]; then
+        run_in_window \
+            "$session" \
+            "run" \
+            "$root" \
+            "$root" \
+            'bash ./.pmux/launch.sh; exec "$SHELL" -l'
+    fi
+
+    tmux select-window -t "$session:$first_window"
 }
 
 main() {
     load_config
 
     case "${1:-}" in
-        -h|--help) usage; exit ;;
-        -v|--version) echo "$PMUX_VERSION"; exit ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -v|--version)
+            echo "$PMUX_VERSION"
+            exit 0
+            ;;
     esac
 
     require_cmd tmux
@@ -203,7 +289,7 @@ main() {
         selected="$(choose_project || true)"
     fi
 
-    [[ -n "$selected" ]] || exit
+    [[ -n "$selected" ]] || exit 0
 
     local root
     root="$(resolve_dir "$selected")"
@@ -218,42 +304,11 @@ main() {
     subs="$(find_subprojects_file "$root" || true)"
 
     if ! tmux has-session -t "$session" 2>/dev/null; then
-        local venv
-        venv="$(find_nearest_python_venv "$root" "$root" || true)"
-
-        local nvm
-        nvm="$(find_nearest_nvmrc "$root" "$root" || true)"
-
-        local prefix
-        prefix="$(build_shell_prefix "$venv" "$nvm")"
-
-        tmux new-session -d -s "$session" -n editor -c "$root" \
-            bash -lc "$prefix; $PMUX_EDITOR_CMD" bash "$root" "$venv"
-
-        tmux new-window -t "$session:" -n shell -c "$root" \
-            bash -lc "$prefix; $PMUX_SHELL_CMD" bash "$root" "$venv"
-
-        if [[ -n "$launch" ]]; then
-            tmux new-window -t "$session:" -n run -c "$root" \
-                bash -lc "$prefix; bash ./.pmux/launch.sh; $PMUX_SHELL_CMD"
-        fi
-
         if [[ -n "$subs" ]]; then
-            while IFS= read -r rel || [[ -n "$rel" ]]; do
-                rel="$(echo "$rel" | xargs)"
-                [[ -z "$rel" || "$rel" == \#* ]] && continue
-                [[ -d "$root/$rel" ]] || continue
-
-                create_window_for_dir \
-                    "$session" \
-                    "$(sanitize_name "$rel")" \
-                    "$root/$rel" \
-                    "$root" \
-                    "$PMUX_SHELL_CMD"
-            done < "$subs"
+            create_container_session "$session" "$root" "$subs" "$launch"
+        else
+            create_leaf_session "$session" "$root" "$launch"
         fi
-
-        tmux select-window -t "$session:editor"
     fi
 
     if [[ -z "${TMUX:-}" ]]; then
