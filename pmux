@@ -218,8 +218,17 @@ create_container_session() {
     local subs_file="$3"
     local launch="$4"
 
-    local first_window=""
-    local first=1
+    local root_venv
+    root_venv="$(find_nearest_python_venv "$root" "$root" || true)"
+
+    local root_nvmrc
+    root_nvmrc="$(find_nearest_nvmrc "$root" "$root" || true)"
+
+    local root_prefix
+    root_prefix="$(build_shell_prefix "$root_venv" "$root_nvmrc")"
+
+    tmux new-session -d -s "$session" -n main -c "$root" \
+        bash -lc "$root_prefix; $PMUX_EDITOR_CMD" bash "$root" "$root_venv"
 
     while IFS= read -r rel || [[ -n "$rel" ]]; do
         rel="$(printf '%s' "$rel" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
@@ -229,35 +238,17 @@ create_container_session() {
         local window_name
         window_name="$(sanitize_name "$rel")"
 
-        if [[ "$first" -eq 1 ]]; then
-            local venv
-            venv="$(find_nearest_python_venv "$root/$rel" "$root" || true)"
-
-            local nvmrc
-            nvmrc="$(find_nearest_nvmrc "$root/$rel" "$root" || true)"
-
-            local prefix
-            prefix="$(build_shell_prefix "$venv" "$nvmrc")"
-
-            tmux new-session -d -s "$session" -n "$window_name" -c "$root/$rel" \
-                bash -lc "$prefix; $PMUX_EDITOR_CMD" bash "$root/$rel" "$venv"
-
-            first_window="$window_name"
-            first=0
-        else
-            run_in_window \
-                "$session" \
-                "$window_name" \
-                "$root/$rel" \
-                "$root" \
-                "$PMUX_EDITOR_CMD"
+        if [[ "$window_name" == "main" || "$window_name" == "shell" || "$window_name" == "run" ]]; then
+            window_name="sub_${window_name}"
         fi
-    done < "$subs_file"
 
-    if [[ -z "$first_window" ]]; then
-        echo "Error: .pmux/subprojects exists, but no valid subproject directories were found." >&2
-        exit 1
-    fi
+        run_in_window \
+            "$session" \
+            "$window_name" \
+            "$root/$rel" \
+            "$root" \
+            "$PMUX_EDITOR_CMD"
+    done < "$subs_file"
 
     run_in_window \
         "$session" \
@@ -275,7 +266,7 @@ create_container_session() {
             'bash ./.pmux/launch.sh; exec "$SHELL" -l'
     fi
 
-    tmux select-window -t "$session:$first_window"
+    tmux select-window -t "$session:main"
 }
 
 main() {
