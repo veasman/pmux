@@ -4,23 +4,23 @@
 
 It is designed for two kinds of repositories:
 
-- **leaf projects**: normal projects you work in directly
-- **container projects**: repos that mainly organize and coordinate subprojects
+* **leaf projects**: normal projects you work in directly
+* **container projects**: repos that mainly organize and coordinate subprojects
 
 pmux automatically:
 
-- opens a tmux session for a project
-- launches Neovim or your configured editor
-- opens an interactive shell
-- optionally runs project startup scripts
-- supports container repos with subproject editor windows
-- activates Python virtual environments
-- activates Node versions via `.nvmrc`
+* opens a tmux session for a project
+* launches Neovim or your configured editor
+* opens an interactive shell
+* optionally runs project startup scripts
+* supports container repos with subproject editor windows
+* activates Python virtual environments
+* activates Node versions via `.nvmrc`
 
 Related tools:
 
-- **pmux-run**: detect and run likely project commands in the current tmux session
-- **pmux-cheat**: open cht.sh lookups in tmux
+* **pmux-run**: detect and run likely project commands in the current tmux session
+* **pmux-cheat**: open cht.sh lookups in tmux
 
 ---
 
@@ -28,18 +28,18 @@ Related tools:
 
 Required:
 
-- **tmux**
+* **tmux**
 
 Required for interactive project picking:
 
-- **fzf**
+* **fzf**
 
 Optional:
 
-- **nvm** (for `.nvmrc` support)
-- **jq** (for better `package.json` script detection in `pmux-run`)
-- **curl** (for `pmux-cheat`)
-- **xclip** (for the example tmux clipboard binding on X11)
+* **nvm** (for `.nvmrc` support)
+* **jq** (for better `package.json` script detection in `pmux-run`)
+* **curl** (for `pmux-cheat`)
+* **xclip** (for the example tmux clipboard binding on X11)
 
 ---
 
@@ -51,9 +51,9 @@ Clone the repository and run:
 
 ```bash
 ./install.sh
-````
+```
 
-This installs:
+This installs user-local binaries and default configuration:
 
 ```text
 ~/.local/bin/pmux
@@ -65,6 +65,30 @@ This installs:
 ```
 
 Make sure `~/.local/bin` is in your `PATH`.
+
+Example:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+---
+
+## Uninstall
+
+Remove installed binaries:
+
+```bash
+rm ~/.local/bin/pmux
+rm ~/.local/bin/pmux-run
+rm ~/.local/bin/pmux-cheat
+```
+
+Remove configuration (optional):
+
+```bash
+rm -rf ~/.config/pmux
+```
 
 ---
 
@@ -159,13 +183,13 @@ pmux creates:
 
 Notes:
 
-* container projects do **not** create a root editor window
+* container projects **do not create a root editor window**
 * subprojects get editor windows only
-* subprojects do **not** automatically get shell or run windows
+* subprojects **do not automatically get shell or run windows**
 
 ---
 
-# Repo Features
+# Repository Configuration
 
 pmux supports optional repo-local configuration under:
 
@@ -189,6 +213,8 @@ set -euo pipefail
 
 make dev
 ```
+
+---
 
 ## `.pmux/subprojects`
 
@@ -234,6 +260,8 @@ env
 ```
 
 If found, it activates the nearest match.
+
+---
 
 ## Node
 
@@ -363,6 +391,8 @@ shell
 run
 ```
 
+---
+
 ## Container project
 
 ```text
@@ -392,11 +422,23 @@ run
 # Suggested tmux Bindings
 
 ```tmux
-bind-key -r f display-popup -E "~/.local/bin/pmux"
+bind-key -r f display-popup -E pmux
 bind-key -r r run-shell "~/.local/bin/pmux-run"
 bind-key -r R run-shell "~/.local/bin/pmux-run --multi"
 bind-key -r c run-shell "~/.local/bin/pmux-cheat"
 ```
+
+---
+
+# Design Goals
+
+pmux aims to:
+
+* launch projects quickly with minimal configuration
+* create consistent tmux layouts across repositories
+* support both standalone and multi-repo container projects
+* automatically activate development environments
+* remain lightweight and dependency minimal
 
 ---
 
