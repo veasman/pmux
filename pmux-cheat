@@ -16,6 +16,8 @@ CHEAT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pmux/cheat"
 LANG_FILE="$CHEAT_DIR/languages"
 CMD_FILE="$CHEAT_DIR/commands"
 
+PMUX_LOOM_FZF_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/loom/generated/fzf-theme.sh"
+
 [[ -f "$LANG_FILE" ]] || {
     echo "Error: missing $LANG_FILE" >&2
     exit 1
@@ -25,6 +27,14 @@ CMD_FILE="$CHEAT_DIR/commands"
     echo "Error: missing $CMD_FILE" >&2
     exit 1
 }
+
+
+if [[ -f "${PMUX_LOOM_FZF_FILE}" ]]; then
+    # shellcheck source=/dev/null
+    source "${PMUX_LOOM_FZF_FILE}"
+fi
+
+export FZF_DEFAULT_OPTS="${FZF_DEFAULT_OPTS:+$FZF_DEFAULT_OPTS }${LOOM_FZF_COLOR_OPTS:-}"
 
 selected="$(cat "$LANG_FILE" "$CMD_FILE" | awk 'NF' | fzf --prompt="cheat> " || true)"
 [[ -n "${selected:-}" ]] || exit 0

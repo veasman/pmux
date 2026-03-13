@@ -15,6 +15,8 @@ PMUX_REPOS_DIR="${HOME}/repos"
 PMUX_FIXED_PROJECTS_DEFAULT=("${PMUX_DOTFILES_DIR}")
 PMUX_PROJECT_ROOTS_DEFAULT=("${PMUX_REPOS_DIR}")
 
+PMUX_LOOM_FZF_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/loom/generated/fzf-theme.sh"
+
 load_config() {
     if [[ -f "${PMUX_CONFIG_FILE}" ]]; then
         # shellcheck source=/dev/null
@@ -91,7 +93,17 @@ build_choices() {
     done
 }
 
+load_fzf_theme() {
+    if [[ -f "${PMUX_LOOM_FZF_FILE}" ]]; then
+        # shellcheck source=/dev/null
+        source "${PMUX_LOOM_FZF_FILE}"
+    fi
+
+    export FZF_DEFAULT_OPTS="${FZF_DEFAULT_OPTS:+$FZF_DEFAULT_OPTS }${LOOM_FZF_COLOR_OPTS:-}"
+}
+
 choose_project() {
+    load_fzf_theme
     build_choices | awk '!seen[$0]++' | eval "$PMUX_CHOOSER_CMD"
 }
 
