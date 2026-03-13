@@ -5,7 +5,7 @@ PMUX_VERSION="0.2.0"
 
 PMUX_CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/pmux/config"
 
-PMUX_EDITOR_CMD='exec nvim .'
+PMUX_EDITOR_CMD='exec nvim --listen "/tmp/nvim-loom-$$-$(date +%s).sock" .'
 PMUX_SHELL_CMD='exec "$SHELL" -l'
 PMUX_CHOOSER_CMD='fzf --prompt="Project > "'
 
@@ -16,6 +16,7 @@ PMUX_FIXED_PROJECTS_DEFAULT=("${PMUX_DOTFILES_DIR}")
 PMUX_PROJECT_ROOTS_DEFAULT=("${PMUX_REPOS_DIR}")
 
 PMUX_LOOM_FZF_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/loom/generated/fzf-theme.sh"
+PMUX_FZF_BASE_OPTS="${PMUX_FZF_BASE_OPTS:-}"
 
 load_config() {
     if [[ -f "${PMUX_CONFIG_FILE}" ]]; then
@@ -53,6 +54,19 @@ require_cmd() {
         echo "Error: required command not found: $1" >&2
         exit 1
     }
+}
+
+load_fzf_theme() {
+    LOOM_FZF_COLOR_OPTS=""
+    if [[ -f "${PMUX_LOOM_FZF_FILE}" ]]; then
+        # shellcheck source=/dev/null
+        source "${PMUX_LOOM_FZF_FILE}"
+    fi
+}
+
+current_fzf_opts() {
+    load_fzf_theme
+    printf '%s' "${PMUX_FZF_BASE_OPTS:+$PMUX_FZF_BASE_OPTS }${LOOM_FZF_COLOR_OPTS:-}"
 }
 
 resolve_dir() {
@@ -93,18 +107,10 @@ build_choices() {
     done
 }
 
-load_fzf_theme() {
-    if [[ -f "${PMUX_LOOM_FZF_FILE}" ]]; then
-        # shellcheck source=/dev/null
-        source "${PMUX_LOOM_FZF_FILE}"
-    fi
-
-    export FZF_DEFAULT_OPTS="${FZF_DEFAULT_OPTS:+$FZF_DEFAULT_OPTS }${LOOM_FZF_COLOR_OPTS:-}"
-}
-
 choose_project() {
-    load_fzf_theme
-    build_choices | awk '!seen[$0]++' | eval "$PMUX_CHOOSER_CMD"
+    local fzf_opts
+    fzf_opts="$(current_fzf_opts)"
+    build_choices | awk '!seen[$0]++' | FZF_DEFAULT_OPTS="$fzf_opts" bash -lc 'eval "$1"' bash "$PMUX_CHOOSER_CMD"
 }
 
 find_launch_script() {

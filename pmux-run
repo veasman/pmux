@@ -20,6 +20,20 @@ pane_path="$(tmux display-message -p "#{pane_current_path}")"
 session="$(tmux display-message -p "#{session_name}")"
 
 PMUX_LOOM_FZF_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/loom/generated/fzf-theme.sh"
+PMUX_FZF_BASE_OPTS="${PMUX_FZF_BASE_OPTS:-}"
+
+load_fzf_theme() {
+    LOOM_FZF_COLOR_OPTS=""
+    if [[ -f "${PMUX_LOOM_FZF_FILE}" ]]; then
+        # shellcheck source=/dev/null
+        source "${PMUX_LOOM_FZF_FILE}"
+    fi
+}
+
+current_fzf_opts() {
+    load_fzf_theme
+    printf '%s' "${PMUX_FZF_BASE_OPTS:+$PMUX_FZF_BASE_OPTS }${LOOM_FZF_COLOR_OPTS:-}"
+}
 
 ensure_run_window() {
     if ! tmux list-windows -t "$session" -F "#{window_name}" | grep -qx "run"; then
@@ -141,26 +155,19 @@ build_menu() {
     printf '%s\n' "${items[@]}" | awk 'NF' | sort -u
 }
 
-load_fzf_theme() {
-    if [[ -f "${PMUX_LOOM_FZF_FILE}" ]]; then
-        # shellcheck source=/dev/null
-        source "${PMUX_LOOM_FZF_FILE}"
-    fi
-
-    export FZF_DEFAULT_OPTS="${FZF_DEFAULT_OPTS:+$FZF_DEFAULT_OPTS }${LOOM_FZF_COLOR_OPTS:-}"
-}
-
 pick_commands() {
-    load_fzf_theme
-
     local menu
+    local fzf_opts
+
     menu="$(build_menu)"
     [[ -n "$menu" ]] || menu="echo 'No detected commands. Type what you want.'"
 
+    fzf_opts="$(current_fzf_opts)"
+
     if [[ "$MULTI" -eq 1 ]]; then
-        printf '%s\n' "$menu" | fzf -m --prompt="run (multi)> "
+        printf '%s\n' "$menu" | env -u FZF_DEFAULT_OPTS FZF_DEFAULT_OPTS="$fzf_opts" fzf -m --prompt="run (multi)> "
     else
-        printf '%s\n' "$menu" | fzf --prompt="run> "
+        printf '%s\n' "$menu" | env -u FZF_DEFAULT_OPTS FZF_DEFAULT_OPTS="$fzf_opts" fzf --prompt="run> "
     fi
 }
 
