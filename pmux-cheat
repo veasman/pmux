@@ -51,8 +51,8 @@ read -r -p "Enter Query: " query
 if grep -qsx "$selected" "$LANG_FILE"; then
     query="$(printf '%s' "$query" | tr ' ' '+')"
     tmux new-window -n "cheat:$selected" \
-        "bash -lc 'echo \"curl cht.sh/$selected/$query\"; echo; curl -s \"cht.sh/$selected/$query\"; exec bash'"
+        "sh -lc 'echo \"curl cht.sh/$selected/$query\"; echo; curl -s \"cht.sh/$selected/$query\"; exec sh'"
 else
     tmux new-window -n "cheat:$selected" \
-        "bash -lc 'curl -s \"cht.sh/$selected~$query\" | less'"
+        "sh -lc 'curl -s \"cht.sh/$selected~$query\" | less'"
 fi

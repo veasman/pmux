@@ -28,11 +28,11 @@ uninstall.sh - remove pmux binaries
 
 Usage:
   ./uninstall.sh
-  ./uninstall.sh --purge-config
+  ./uninstall.sh --purge
   ./uninstall.sh --help
 
 Options:
-  --purge-config   Also remove pmux config and cheat files
+  --purge          Also remove pmux config and cheat files
   --help           Show this help text
 EOF
 }
@@ -40,7 +40,7 @@ EOF
 PURGE_CONFIG=0
 
 case "${1:-}" in
-    --purge-config)
+    --purge)
         PURGE_CONFIG=1
         ;;
     -h|--help)
