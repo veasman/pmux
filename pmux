@@ -219,6 +219,11 @@ create_leaf_session() {
     tmux new-session -d -s "$session" -n editor -c "$root" \
         bash -lc "$prefix; $PMUX_EDITOR_CMD" bash "$root" "$venv"
 
+    if [[ -f "$root/CLAUDE.md" ]]; then
+        tmux new-window -t "$session:" -n claude -c "$root" \
+            bash -lc "$prefix; claude" bash "$root" "$venv"
+    fi
+
     tmux new-window -t "$session:" -n shell -c "$root" \
         bash -lc "$prefix; $PMUX_SHELL_CMD" bash "$root" "$venv"
 

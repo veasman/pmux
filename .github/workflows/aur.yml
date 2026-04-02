@@ -1,0 +1,62 @@
+name: Publish to AUR
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  aur:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pacman tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libarchive-tools
+
+      - name: Extract version from release tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download release tarball and compute checksum
+        run: |
+          curl -sL "https://github.com/veasman/pmux/archive/refs/tags/${{ github.ref_name }}.tar.gz" -o source.tar.gz
+          B2=$(b2sum source.tar.gz | awk '{print $1}')
+          echo "b2hash=$B2" >> "$GITHUB_ENV"
+
+      - name: Prepare PKGBUILD
+        run: |
+          sed -i "s/^pkgver=.*/pkgver=${{ steps.version.outputs.version }}/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          sed -i "s/^b2sums=.*/b2sums=('${{ env.b2hash }}')/" PKGBUILD
+
+      - name: Generate .SRCINFO
+        uses: hapakaien/archlinux-package-action@v2
+        with:
+          flags: ''
+          namcap: false
+          srcinfo: true
+
+      - name: Push to AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          cat >> ~/.ssh/config <<EOF
+          Host aur.archlinux.org
+            IdentityFile ~/.ssh/aur
+            User aur
+            StrictHostKeyChecking accept-new
+          EOF
+
+          git clone ssh://aur@aur.archlinux.org/pmux.git aur-repo
+          cp PKGBUILD .SRCINFO aur-repo/
+          cd aur-repo
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add PKGBUILD .SRCINFO
+          git diff --cached --quiet || git commit -m "Update to ${{ steps.version.outputs.version }}"
+          git push
