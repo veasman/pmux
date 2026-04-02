@@ -5,12 +5,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-make install-user   # Install to ~/.local/bin + bootstrap ~/.config/pmux/ defaults
-make uninstall-user # Remove binaries from ~/.local/bin
-make purge          # Remove binaries and config
+make install                           # Install to ~/.local/bin + bootstrap ~/.config/pmux/ defaults
+make uninstall                         # Remove binaries
+make purge                             # Remove binaries and config
 
 make install DESTDIR=... PREFIX=/usr   # System/packaging install
-make uninstall PREFIX=/usr             # System uninstall
 ```
 
 There is no test suite or linter. The scripts can be run directly from the repo root.
