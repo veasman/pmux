@@ -35,10 +35,23 @@ current_fzf_opts() {
     printf '%s' "${PMUX_FZF_BASE_OPTS:+$PMUX_FZF_BASE_OPTS }${LOOM_FZF_COLOR_OPTS:-}"
 }
 
-ensure_run_window() {
-    if ! tmux list-windows -t "$session" -F "#{window_name}" | grep -qx "run"; then
-        tmux new-window -t "$session:" -n run -c "$pane_path"
-    fi
+window_name_from_cmd() {
+    local cmd="$1"
+    # Strip leading tool prefix to get a short, readable window name
+    cmd="${cmd#make }"
+    cmd="${cmd#npm run }"
+    cmd="${cmd#cargo }"
+    cmd="${cmd#go }"
+    cmd="${cmd#python -m }"
+    cmd="${cmd#docker compose -f }"
+    cmd="${cmd#docker }"
+    # Truncate long names
+    printf '%s' "${cmd:0:30}"
+}
+
+create_run_window() {
+    local name="$1"
+    tmux new-window -t "$session:" -n "$name" -c "$pane_path" -P -F "#{window_id}"
 }
 
 has_file() {
@@ -173,18 +186,18 @@ pick_commands() {
 
 run_single() {
     local cmd="$1"
-    ensure_run_window
-    tmux select-window -t "$session:run"
-    tmux send-keys -t "$session:run" "cd \"$pane_path\" && $cmd" C-m
+    local name
+    name="$(window_name_from_cmd "$cmd")"
+    local wid
+    wid="$(create_run_window "$name")"
+    tmux select-window -t "$wid"
+    tmux send-keys -t "$wid" "cd \"$pane_path\" && $cmd" C-m
 }
 
 run_multi() {
-    ensure_run_window
-    tmux select-window -t "$session:run"
-
-    tmux kill-pane -a -t "$session:run".0 >/dev/null 2>&1 || true
-    tmux send-keys -t "$session:run".0 C-c >/dev/null 2>&1 || true
-    tmux clear-history -t "$session:run" >/dev/null 2>&1 || true
+    local wid
+    wid="$(create_run_window "run")"
+    tmux select-window -t "$wid"
 
     local first=1
     local idx=0
@@ -194,17 +207,17 @@ run_multi() {
         [[ -n "$cmd" ]] || continue
 
         if [[ "$first" -eq 1 ]]; then
-            tmux select-pane -t "$session:run".0
-            tmux send-keys -t "$session:run".0 "cd \"$pane_path\" && $cmd" C-m
+            tmux select-pane -t "$wid".0
+            tmux send-keys -t "$wid".0 "cd \"$pane_path\" && $cmd" C-m
             first=0
         else
-            tmux split-window -t "$session:run" -v -c "$pane_path"
+            tmux split-window -t "$wid" -v -c "$pane_path"
             idx=$((idx + 1))
-            tmux send-keys -t "$session:run".$idx "cd \"$pane_path\" && $cmd" C-m
+            tmux send-keys -t "$wid".$idx "cd \"$pane_path\" && $cmd" C-m
         fi
     done
 
-    tmux select-layout -t "$session:run" tiled >/dev/null 2>&1 || true
+    tmux select-layout -t "$wid" tiled >/dev/null 2>&1 || true
 }
 
 selected="$(pick_commands || true)"

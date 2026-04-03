@@ -50,19 +50,10 @@ Optional:
 Clone the repository and run:
 
 ```bash
-./install.sh
+make install
 ```
 
-This installs user-local binaries and default configuration:
-
-```text
-~/.local/bin/pmux
-~/.local/bin/pmux-run
-~/.local/bin/pmux-cheat
-~/.config/pmux/config
-~/.config/pmux/cheat/languages
-~/.config/pmux/cheat/commands
-```
+This installs user-local binaries to `~/.local/bin` and bootstraps default configuration under `~/.config/pmux/`.
 
 Make sure `~/.local/bin` is in your `PATH`.
 
@@ -79,15 +70,13 @@ export PATH="$HOME/.local/bin:$PATH"
 Remove installed binaries:
 
 ```bash
-rm ~/.local/bin/pmux
-rm ~/.local/bin/pmux-run
-rm ~/.local/bin/pmux-cheat
+make uninstall
 ```
 
-Remove configuration (optional):
+Remove binaries and configuration:
 
 ```bash
-rm -rf ~/.config/pmux
+make purge
 ```
 
 ---
@@ -298,7 +287,7 @@ It inspects the current pane directory and suggests likely commands such as:
 * `cargo test`
 * `python -m pytest`
 
-It runs the selected command in a `run` window in the current tmux session.
+Each invocation creates a new tmux window named after the selected command (e.g. selecting `make dev` creates a window called `dev`).
 
 Examples:
 
@@ -307,7 +296,7 @@ pmux-run
 pmux-run --multi
 ```
 
-`--multi` lets you pick multiple commands and run them in panes in the `run` window.
+`--multi` lets you pick multiple commands and run them in split panes in a new window.
 
 ---
 
